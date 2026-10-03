@@ -28,6 +28,7 @@
 
 /* includes ------------------------------------------------------------------*/
 #include "at32f402_405_clock.h"
+#include "board.h"
 
 /**
   * @brief  system clock config program
@@ -65,9 +66,13 @@ void system_clock_config(void)
 
   crm_clock_source_enable(CRM_CLOCK_SOURCE_HEXT, TRUE);
 
-  /* wait till hext is ready */
-  while(crm_hext_stable_wait() == ERROR)
+  /* wait till hext is ready. BOUNDED but NON-FATAL: a dead crystal shows up
+   * as no USB, never as a reset loop (only the host's 0x7F handshake resets). */
   {
+    volatile uint32_t guard = BOOT_WAIT_SPIN;
+    while (crm_hext_stable_wait() == ERROR) {
+      if (!--guard) break;
+    }
   }
 
   /* if pll parameter has changed, please use the AT32_New_Clock_Configuration tool for new configuration. */
@@ -79,9 +84,12 @@ void system_clock_config(void)
   /* enable pll */
   crm_clock_source_enable(CRM_CLOCK_SOURCE_PLL, TRUE);
 
-  /* wait till pll is ready */
-  while(crm_flag_get(CRM_PLL_STABLE_FLAG) != SET)
+  /* wait till pll is ready (BOUNDED - same reason as above). */
   {
+    volatile uint32_t guard = BOOT_WAIT_SPIN;
+    while (crm_flag_get(CRM_PLL_STABLE_FLAG) != SET) {
+      if (!--guard) break;
+    }
   }
 
   /* config ahbclk */
@@ -99,9 +107,12 @@ void system_clock_config(void)
   /* select pll as system clock source */
   crm_sysclk_switch(CRM_SCLK_PLL);
 
-  /* wait till pll is used as system clock source */
-  while(crm_sysclk_switch_status_get() != CRM_SCLK_PLL)
+  /* wait till pll is used as system clock source (BOUNDED - same reason). */
   {
+    volatile uint32_t guard = BOOT_WAIT_SPIN;
+    while (crm_sysclk_switch_status_get() != CRM_SCLK_PLL) {
+      if (!--guard) break;
+    }
   }
 
   /* disable auto step mode */

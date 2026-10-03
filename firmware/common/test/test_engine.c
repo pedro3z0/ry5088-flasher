@@ -68,6 +68,38 @@ int main(void)
   frame(&e, pressed, K, 2600, REST);                 /* travel 400 < actuation 800 again */
   CHECK(pressed[K] == 0, "re-armed: the next first press again needs the actuation point");
 
+  printf("[2c] Traditional vs Continuous RT diverge above the actuation point\n");
+  {
+    /* act = 1200 counts, rel = 600, rt_press = rt_release = 200 counts. */
+    hall_keycfg_t c = { .mode = HALL_MODE_RAPID_TRIGGER, .press_cmm = 300,
+                        .release_cmm = 150, .rt_press_cmm = 50, .rt_release_cmm = 50 };
+
+    /* ---- traditional: rising above the actuation point disarms -> next
+     * trigger must re-cross actuation (which 950 does NOT reach). ---- */
+    c.rt_mode = HALL_RT_TRADITIONAL;
+    hall_init(&e);
+    hall_set_global(&e, &c);
+    frame(&e, pressed, K, REST, REST);     /* d = 0    */
+    frame(&e, pressed, K, 1000, REST);     /* d = 2000 -> press, arm      */
+    CHECK(pressed[K] == 1, "traditional: press at 2000");
+    frame(&e, pressed, K, 2300, REST);     /* d = 700, above act -> release + disarm */
+    CHECK(pressed[K] == 0, "traditional: released on the upstroke");
+    frame(&e, pressed, K, 2050, REST);     /* d = 950 (<act 1200), +250 vs ref 700   */
+    CHECK(pressed[K] == 0, "traditional: 950 does NOT re-trigger (must reach 1200)");
+
+    /* ---- continuous: stays armed across the whole travel -> the same 950
+     * downward move re-triggers. ---- */
+    c.rt_mode = HALL_RT_CONTINUOUS;
+    hall_init(&e);
+    hall_set_global(&e, &c);
+    frame(&e, pressed, K, REST, REST);
+    frame(&e, pressed, K, 1000, REST);
+    frame(&e, pressed, K, 2300, REST);
+    CHECK(pressed[K] == 0, "continuous: released on the upstroke");
+    frame(&e, pressed, K, 2050, REST);
+    CHECK(pressed[K] == 1, "continuous: 950 re-triggers above the actuation point");
+  }
+
   printf("[3] Boot report: modifiers fold, keycodes fill, de-dupe\n");
   {
     uint8_t pr[KS_NUM_KEYS]; memset(pr, 0, sizeof pr);

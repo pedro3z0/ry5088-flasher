@@ -39,7 +39,12 @@ INCS = -I$(SRC) -I$(GENDIR) \
        -I$(DRV)/inc \
        -I$(USBDRV)/inc
 
-DEFS = -DAT32F405RCT7 -DUSE_STDPERIPH_DRIVER -DUSB_OTG_FS
+# The keyboard wires its USB connector to the AT32F405 OTGHS core (USB_OTG2) —
+# verified from the stock image: the factory app references OTGHS_BASE
+# (0x40040000) only, and never OTGFS1_BASE (0x50000000), and it negotiates High
+# Speed. Building with -DUSB_OTG_FS put the device on the wrong (unwired) PHY,
+# so it never appeared on the bus at all.
+DEFS = -DAT32F405RCT7 -DUSE_STDPERIPH_DRIVER -DUSB_OTG_HS
 
 ARCH    = -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
 CFLAGS  = $(ARCH) $(DEFS) $(INCS) -ffunction-sections -fdata-sections -Os -g3 -Wall
