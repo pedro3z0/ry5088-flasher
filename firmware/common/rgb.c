@@ -17,6 +17,7 @@
  */
 #include "at32f402_405.h"
 #include "rgb.h"
+#include "board.h"
 
 /* --- WS2812 bit-cell SPI byte patterns (MSB-first) --- */
 #ifndef WS2812_BIT0
@@ -111,8 +112,15 @@ void rgb_show(const led_frame_t frame)
 {
   unsigned i;
 
-  /* wait out any in-flight transfer so the framebuffer is not torn */
-  while (rgb_busy()) { /* spin: a frame is ~1.7 ms, render cadence is far slower */ }
+  /* wait out any in-flight transfer so the framebuffer is not torn.
+   * BOUNDED, non-fatal: a stuck DMA abandons this frame (dropping it) rather
+   * than resetting the board — USB must stay alive. */
+  {
+    volatile uint32_t guard = BOOT_WAIT_SPIN;
+    while (rgb_busy()) {
+      if (!--guard) { g_inflight = 0; break; }
+    }
+  }
   dma_channel_enable(DMA1_CHANNEL1, FALSE);
   dma_flag_clear(DMA1_FDT1_FLAG);
   dma_flag_clear(DMA1_HDT1_FLAG);

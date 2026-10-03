@@ -34,6 +34,10 @@ HALL_DEFAULTS = {
     "press_decreases": True, "full_travel_cmm": 400, "assumed_span": 1600,
     "noise_counts": 16, "press_cmm": 200, "release_cmm": 150,
     "rt_press_cmm": 50, "rt_release_cmm": 50,
+    # Rapid Trigger flavour: "traditional" (classic; trigger zone only below the
+    # actuation point) or "continuous" (stock CRT; whole travel until full
+    # release). The stock FUN60 family ships "continuous"; boards may override.
+    "rt_mode": "continuous",
 }
 # magnetism factory defaults presented over the vendor protocol (switch-level),
 # in hundredths of a mm.
@@ -150,6 +154,7 @@ def main():
 #define HALL_DEF_RELEASE_CMM    {hall["release_cmm"]}
 #define HALL_DEF_RT_PRESS_CMM   {hall["rt_press_cmm"]}
 #define HALL_DEF_RT_RELEASE_CMM {hall["rt_release_cmm"]}
+#define HALL_DEF_RT_MODE        {1 if hall["rt_mode"] == "continuous" else 0}u  /* 0 = traditional, 1 = continuous */
 #define MG_DEF_MAG_PRESS        {mag["press"]}
 #define MG_DEF_MAG_LIFT         {mag["lift"]}
 #define MG_DEF_MAG_RT_PRESS     {mag["rt_press"]}

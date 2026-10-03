@@ -25,7 +25,7 @@ const uint8_t monsgeek_device_desc[MG_DEVICE_DESC_SIZE] =
   LB(MONSGEEK_BCD_DEVICE), HB(MONSGEEK_BCD_DEVICE),  /* bcdDevice (board_config) */
   0x01,                 /* iManufacturer  -> "MonsGeek Keyboard"              */
   0x02,                 /* iProduct       -> " FUN60 Ultra-1"                 */
-  0x03,                 /* iSerialNumber  -> chip UID                         */
+  0x00,                 /* iSerialNumber  -> 0 (stock FUN60 Pro declares none)*/
   0x01                  /* bNumConfigurations                                 */
 };
 
@@ -44,29 +44,33 @@ const uint8_t monsgeek_config_desc[MG_CONFIG_DESC_SIZE] =
   0x01,                 /* bConfigurationValue                                */
   0x00,                 /* iConfiguration                                     */
   0xA0,                 /* bmAttributes: bus powered + remote wakeup          */
-  0xFA,                 /* bMaxPower = 500 mA                                 */
+  0xFA,                 /* bMaxPower = 500 mA (stock reports 0xF8 = 496 mA)   */
 
   /* --- IF0: boot keyboard --- */
   0x09, 0x04, 0x00, 0x00, 0x01, 0x03, 0x01, 0x01, 0x00,
         /* INTERFACE if=0 alt=0 nEP=1 class=HID sub=Boot proto=Keyboard       */
   0x09, 0x21, 0x11, 0x01, 0x00, 0x01, 0x22,
         LB(MG_BOOT_KBD_REPORT_SIZE), HB(MG_BOOT_KBD_REPORT_SIZE),  /* HID desc */
-  0x07, 0x05, MG_EP_BOOT_KBD_IN, 0x03, 0x08, 0x00, 0x01,
-        /* ENDPOINT 0x81 interrupt, 8 byte, bInterval 1 ms                    */
+  0x07, 0x05, MG_EP_BOOT_KBD_IN, 0x03, 0x40, 0x00, 0x01,
+        /* ENDPOINT 0x81 interrupt, 64 byte, bInterval 1 ms (stock is 64, not 8) */
 
   /* --- IF1: extended (NKRO + system + consumer + vendor events) --- */
-  0x09, 0x04, 0x01, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00,
-        /* INTERFACE if=1 alt=0 nEP=1 class=HID sub=0 proto=0                 */
+  0x09, 0x04, 0x01, 0x00, 0x01, 0x03, 0x01, 0x01, 0x00,
+        /* INTERFACE if=1 alt=0 nEP=1 class=HID sub=1 proto=1 (stock: Boot/Kbd) */
   0x09, 0x21, 0x11, 0x01, 0x00, 0x01, 0x22,
         LB(MG_EXT_REPORT_SIZE), HB(MG_EXT_REPORT_SIZE),            /* HID desc */
   0x07, 0x05, MG_EP_EXT_IN, 0x03, 0x40, 0x00, 0x01,
         /* ENDPOINT 0x82 interrupt, 64 byte, bInterval 1 ms                   */
 
-  /* --- IF2: vendor config (vendor interface, no endpoint) --- */
-  0x09, 0x04, 0x02, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00,
-        /* INTERFACE if=2 alt=0 nEP=0 class=HID sub=0 proto=0                 */
+  /* --- IF2: vendor config (vendor HID interface + its interrupt IN EP) --- */
+  0x09, 0x04, 0x02, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00,
+        /* INTERFACE if=2 alt=0 nEP=1 class=HID sub=0 proto=0                 */
   0x09, 0x21, 0x11, 0x01, 0x00, 0x01, 0x22,
-        LB(MG_VENDOR_REPORT_SIZE), HB(MG_VENDOR_REPORT_SIZE)       /* HID desc */
+        LB(MG_VENDOR_REPORT_SIZE), HB(MG_VENDOR_REPORT_SIZE),      /* HID desc */
+  0x07, 0x05, MG_EP_VENDOR_IN, 0x03, 0x40, 0x00, 0x01
+        /* ENDPOINT 0x83 interrupt, 64 byte, bInterval 1 ms.
+         * Feature reports (the config protocol) still travel over EP0; this ENDPOINT
+         * exists so IF2 is a spec-valid HID interface (stock has it too). */
 };
 
 /* ----------------------------------------------------------------------------

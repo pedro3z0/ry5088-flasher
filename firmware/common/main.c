@@ -54,6 +54,12 @@ static led_frame_t    frame;
 #define LED_TICK_MS        16u     /* ~60 Hz RGB refresh                        */
 #define SAVE_DEBOUNCE_MS   400u    /* batch rapid SETs, save when settled       */
 
+/* If USB never reaches CONFIGURED after boot (e.g. a descriptor/clock mistake
+ * in a new build), bail to the RY HID-DFU bootloader instead of sitting USB-
+ * dead: no BOOT0 strap needed for recovery. Rounded-up spin budget (~seconds
+ * at 216 MHz on a live crystal, generous for slow hosts). */
+#define USB_BRINGUP_GUARD  0x0C000000u
+
 /* monotonic millisecond clock from the DWT cycle counter (handles 32-bit wrap
  * as long as it is sampled far more often than ~19.9 s, which the loop does). */
 static uint32_t now_ms(void)
@@ -84,7 +90,14 @@ static void apply_magnetism(const monsgeek_state_t *st, hall_engine_t *e)
      * app "lift travel" is used when it does, otherwise a sane margin is kept. */
     uint16_t rel = (lift < press) ? lift : (press >= 50u ? (uint16_t)(press - 50u)
                                                           : (uint16_t)(press / 2u));
-    e->cfg[i].mode           = st->mag_mode[k];
+    /* Vendor mode byte: low 7 bits = base mode, bit 0x80 = the orthogonal RT
+     * ("fire") flag. The engine implements Normal and Rapid Trigger; the other
+     * base modes fall back to Normal until they get engine support. */
+    uint8_t mb = st->mag_mode[k];
+    e->cfg[i].mode           = (mb & 0x80u) ? HALL_MODE_RAPID_TRIGGER : HALL_MODE_NORMAL;
+    /* RT flavour is global (EXTENSION byte cfg[0x1F]); default from the profile. */
+    e->cfg[i].rt_mode        = (st->cfg[0x1f] & 1u) ? HALL_RT_CONTINUOUS
+                                                    : HALL_RT_TRADITIONAL;
     e->cfg[i].press_cmm      = press;
     e->cfg[i].release_cmm    = rel;
     e->cfg[i].rt_press_cmm   = st->mag_rt_press[k];
@@ -153,10 +166,21 @@ int main(void)
   usb_clock48m_select(USB_CLK_HEXT);
   nvic_irq_enable(OTG_IRQ, 0, 0);
   usbd_init(&otg_core_struct,
-            USB_FULL_SPEED_CORE_ID,
+            USB_SPEED_CORE_ID,        /* follows -DUSB_OTG_HS/_FS (stock = HS) */
             USB_ID,
             &monsgeek_class_handler,
             &monsgeek_desc_handler);
+
+  /* Safety net: give the host time to configure USB. BOUNDED but NON-FATAL —
+   * a diagnostic build must never reset the board itself, so if USB does not
+   * reach CONFIGURED we simply continue and let the vendor protocol / engine
+   * run anyway. (Only the host's explicit 0x7F handshake resets us.) */
+  {
+    volatile uint32_t guard = USB_BRINGUP_GUARD;
+    while (usbd_connect_state_get(&otg_core_struct.dev) != USB_CONN_STATE_CONFIGURED) {
+      if (!--guard) break;
+    }
+  }
 
   /* engine + RGB bring-up */
   keyscan_init();
@@ -179,14 +203,21 @@ int main(void)
 
   for (unsigned i = 0; i < HID_BOOT_REPORT_LEN; i++) last_report[i] = 0;
 
+  /* (See the USB-CONFIGURED gate right after usbd_init: it runs before
+   * keyscan/RGB/persist bring-up, so a USB-dead build bails before those can
+   * hang in turn.) */
+
   while (1)
   {
     uint32_t now = now_ms();
     int configured =
         (usbd_connect_state_get(&otg_core_struct.dev) == USB_CONN_STATE_CONFIGURED);
 
-    /* host requested the 0x7F 55 AA 55 AA enter-bootloader handshake */
-    if (st->enter_bootloader) { usb_delay_ms(20); NVIC_SystemReset(); }
+    /* host requested the 0x7F 55 AA 55 AA enter-bootloader handshake.
+     * Must write the boot mailbox (and invalidate the app chip-ID) before
+     * resetting, otherwise the resident bootloader just re-enters this app and
+     * the host never sees 502A — i.e. a flash that "only restarts". */
+    if (st->enter_bootloader) { usb_delay_ms(20); board_enter_dfu(); }
 
     /* On each (re)enumeration the shared class_init resets the state to defaults;
      * reload the persisted config so flash stays the source of truth. */

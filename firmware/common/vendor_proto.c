@@ -32,6 +32,11 @@ void monsgeek_state_init(monsgeek_state_t *st)
   st->cfg[0x18] = 0x2c; st->cfg[0x19] = 0x01;   /* 300 s                        */
   st->cfg[0x1a] = 0x84; st->cfg[0x1b] = 0x03;   /* 900 s                        */
   st->cfg[0x1c] = 0x10; st->cfg[0x1d] = 0x0e;
+  /* Rapid Trigger flavour (EXTENSION, not in the stock protocol):
+   * 0 = traditional RT, 1 = continuous RT. Default is the board profile's
+   * HALL_DEF_RT_MODE so a board can ship either; the vendor app is unaware of
+   * this byte and only ever enables/disables RT via the mode-byte 0x80 flag. */
+  st->cfg[0x1f] = HALL_DEF_RT_MODE;
 
   /* --- LED per-mode table: speed/brightness/options/RGB for every mode --- */
   for (i = 0; i <= MG_LED_MODE_MAX; i++) {
@@ -308,6 +313,10 @@ int monsgeek_vendor_dispatch(monsgeek_state_t *st, uint8_t *report)
     report[1] = st->mag_global_mode;
     return 1;
 
+  case FEA_GET_RTMODE:             /* 0x9F (EXTENSION): report[1] = 0 trad / 1 cont */
+    report[1] = (uint8_t)(cfg[0x1f] & 1);
+    return 1;
+
   case FEA_GET_MULTI_MAG:          /* 0xE5 -> RAW page response */
     return mag_get(st, report);
 
@@ -402,6 +411,10 @@ int monsgeek_vendor_dispatch(monsgeek_state_t *st, uint8_t *report)
   case FEA_SET_MAG_CAL:            /* 0x1C */
   case FEA_SET_MAG_MAXCAL:         /* 0x1E */
     st->cal_state = (uint8_t)(report[1] & 1); return 1;
+
+  case FEA_SET_RTMODE:             /* 0x1F (EXTENSION): report[1] = 0 trad / 1 cont */
+    cfg[0x1f] = (uint8_t)(report[1] & 1);
+    st->cfg_dirty = 1; return 1;
 
   case FEA_SET_KEY_MAG_MODE: {     /* 0x1D: global key mode (apply to all keys) */
     unsigned i;

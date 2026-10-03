@@ -15,6 +15,7 @@
 #include "at32f402_405_gpio.h"
 #include "at32f402_405_adc.h"
 #include "keyscan.h"
+#include "board.h"
 
 /* column counter (GPIOA) */
 #define PA_RESET   0x0010u   /* PA4 - counter master reset / clock gate          */
@@ -71,12 +72,19 @@ static void ks_complete_column(uint8_t col)
   }
 }
 
-/* One software-triggered ordinary conversion of ADC ch2 (PA2). */
+/* One software-triggered ordinary conversion of ADC ch2 (PA2). BOUNDED, but
+ * NON-FATAL: an engine wait must never reset the board. If the conversion does
+ * not complete we return 0 and keep USB (and the vendor protocol) alive so the
+ * board stays inspectable; bring-up of the analog front-end then proceeds
+ * without a reset loop. */
 static uint16_t ks_sample_adc(void)
 {
+  volatile uint32_t guard = BOOT_WAIT_SPIN;
   adc_ordinary_software_trigger_enable(ADC1, TRUE);     /* CTRL2.OCSWTRG          */
-  while (adc_flag_get(ADC1, ADC_CCE_FLAG) == RESET) { }  /* STS bit1 (OCCE)        */
-  return adc_ordinary_conversion_data_get(ADC1);         /* ODT (also clears CCE)  */
+  while (adc_flag_get(ADC1, ADC_CCE_FLAG) == RESET) {  /* STS bit1 (OCCE)        */
+    if (!--guard) return 0;
+  }
+  return adc_ordinary_conversion_data_get(ADC1);        /* ODT (also clears CCE)  */
 }
 
 void keyscan_init(void)
@@ -87,6 +95,9 @@ void keyscan_init(void)
   crm_periph_clock_enable(CRM_GPIOC_PERIPH_CLOCK, TRUE);
   crm_periph_clock_enable(CRM_GPIOF_PERIPH_CLOCK, TRUE);
   crm_periph_clock_enable(CRM_ADC1_PERIPH_CLOCK, TRUE);
+
+  /* Reset the ADC before configuring it (BSP sequence). */
+  adc_reset(ADC1);
 
   /* PA2 = analog input (ADC1_IN2) */
   gpio_default_para_init(&gi);
@@ -112,8 +123,8 @@ void keyscan_init(void)
   gpio_init(GPIOF, &gi);
   GPIOF->scr = PF_EN;
 
-  /* ADC common clock divider = 6. */
-  ADC_COMMON_CCTRL = (ADC_COMMON_CCTRL & 0xFFF0FFFFu) | (6u << 16);
+  /* ADC clock divider (BSP API: ADC_CLK = HCLK/div). */
+  adc_clock_div_set(ADC_DIV_16);
 
   /* ADC base: independent, single (no scan / no repeat), right-aligned, len 1. */
   adc_base_config_type ab;
@@ -124,17 +135,34 @@ void keyscan_init(void)
   ab.ordinary_channel_length = 1;
   adc_base_config(ADC1, &ab);
 
-  /* single ordinary channel: ch2 (PA2) at sequence position 1 */
-  adc_ordinary_channel_set(ADC1, ADC_CHANNEL_2, 1, ADC_SAMPLETIME_28_5);
+  /* single ordinary channel: ch2 (PA2) at sequence position 1.
+   * Long sample time: the analog-mux common output is relatively high-impedance. */
+  adc_ordinary_channel_set(ADC1, ADC_CHANNEL_2, 1, ADC_SAMPLETIME_239_5);
+
+  /* Ordinary conversions are triggered by software (adc_ordinary_software_trigger_enable).
+   * Without this the software trigger never produces a conversion and every sample
+   * poll would spin forever. */
+  adc_ordinary_conversion_trigger_set(ADC1, ADC12_ORDINARY_TRIG_SOFTWARE, TRUE);
 
   adc_enable(ADC1, TRUE);
   ks_delay(1000);
 
-  /* on-chip calibration */
+  /* on-chip calibration (BOUNDED, non-fatal: never reset the board from an
+   * engine wait; proceed if calibration does not report completion). */
   adc_calibration_init(ADC1);
-  while (adc_calibration_init_status_get(ADC1) == SET) { }
+  {
+    volatile uint32_t guard = BOOT_WAIT_SPIN;
+    while (adc_calibration_init_status_get(ADC1) == SET) {
+      if (!--guard) break;
+    }
+  }
   adc_calibration_start(ADC1);
-  while (adc_calibration_init_status_get(ADC1) == SET) { }
+  {
+    volatile uint32_t guard = BOOT_WAIT_SPIN;
+    while (adc_calibration_status_get(ADC1) == SET) {   /* NOT init_status */
+      if (!--guard) break;
+    }
+  }
 
   /* warm-up conversions */
   for (int i = 0; i < 256; i++) (void)ks_sample_adc();

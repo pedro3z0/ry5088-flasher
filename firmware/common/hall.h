@@ -29,9 +29,26 @@ enum {
   HALL_MODE_SNAPTAP = 5
 };
 
+/* Rapid Trigger flavour (only meaningful when mode == HALL_MODE_RAPID_TRIGGER).
+ *
+ * HALL_RT_TRADITIONAL — the classic RT. The trigger zone is *only* the band
+ *   between the actuation point and bottom-out. Rising back above the actuation
+ *   point resets the key, which must then re-cross the actuation point before it
+ *   can trigger again. (The vendor app calls this "Traditional Rapid Trigger".)
+ *
+ * HALL_RT_CONTINUOUS — the trigger zone spans the whole travel until the key is
+ *   fully released; after the first actuation the key may re-trigger anywhere,
+ *   including above the actuation point, on a downward move of rt_press_cmm.
+ *   (The vendor app calls this "Continuous Rapid Trigger", CRT.) */
+enum {
+  HALL_RT_TRADITIONAL = 0,
+  HALL_RT_CONTINUOUS  = 1
+};
+
 /* Per-key tunables (centi-mm). */
 typedef struct {
   uint8_t  mode;            /* HALL_MODE_*                                       */
+  uint8_t  rt_mode;         /* HALL_RT_* (Rapid Trigger flavour)                 */
   uint16_t press_cmm;       /* actuation depth (Normal)        default 200 (2.0) */
   uint16_t release_cmm;     /* release depth   (Normal)        default 150 (1.5) */
   uint16_t rt_press_cmm;    /* rapid-trigger press delta       default  50 (0.5) */
@@ -46,7 +63,7 @@ typedef struct {
   int16_t  rt_ref;          /* rapid-trigger pivot (peak/valley travel)          */
   uint8_t  pressed;         /* actuation output                                  */
   uint8_t  primed;          /* baseline has been seeded                          */
-  uint8_t  rt_armed;        /* RT: actuation point reached this press-session    */
+  uint8_t  rt_armed;        /* RT session live (inside the active trigger zone)  */
 } hall_key_t;
 
 typedef struct {

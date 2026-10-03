@@ -28,12 +28,18 @@
 
 /* ---- standard descriptor lengths ---- */
 #define MG_DEVICE_DESC_SIZE       18
-#define MG_CONFIG_DESC_SIZE       77      /* 9 + (9+9+7) + (9+9+7) + (9+9)        */
+#define MG_CONFIG_DESC_SIZE       84      /* 9 + (9+9+7) + (9+9+7) + (9+9+7)
+                                           * MUST match the stock FUN60 Pro
+                                           * (wTotalLength 0x54). IF2 is a HID
+                                           * interface, so it needs its interrupt
+                                           * IN endpoint or the host's HID class
+                                           * driver rejects the configuration. */
 #define MG_QUALIFIER_DESC_SIZE    10
 
 /* ---- endpoints ---- */
 #define MG_EP_BOOT_KBD_IN         0x81    /* IF0 interrupt IN, 8-byte boot report */
 #define MG_EP_EXT_IN              0x82    /* IF1 interrupt IN, NKRO/consumer/...   */
+#define MG_EP_VENDOR_IN           0x83    /* IF2 interrupt IN, 64B (vendor events) */
 /* IF2 (vendor) has no dedicated endpoint: feature reports travel over EP0.       */
 
 extern const uint8_t monsgeek_device_desc[MG_DEVICE_DESC_SIZE];

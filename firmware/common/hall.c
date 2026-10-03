@@ -21,6 +21,7 @@ void hall_init(hall_engine_t *e)
 {
   const hall_keycfg_t d = {
     .mode = HALL_MODE_NORMAL,
+    .rt_mode = HALL_DEF_RT_MODE,
     .press_cmm = HALL_DEF_PRESS_CMM,
     .release_cmm = HALL_DEF_RELEASE_CMM,
     .rt_press_cmm = HALL_DEF_RT_PRESS_CMM,
@@ -91,30 +92,50 @@ void hall_process(hall_engine_t *e, const uint16_t *raw, uint8_t *pressed)
     if (c->mode == HALL_MODE_RAPID_TRIGGER) {
       int rtp = (int)HALL_CMM_TO_COUNTS(c->rt_press_cmm);
       int rtl = (int)HALL_CMM_TO_COUNTS(c->rt_release_cmm);
-      /* The first actuation of a press requires reaching the configured actuation
-       * point `act`; only after that ("armed") does the rapid-trigger re-press
-       * delta take over. This honours the user's actuation setting instead of
-       * triggering near rest. Releasing past `rel` disarms and re-arms `act`. */
-      if (!k->pressed) {
-        if (d <= k->rt_ref) k->rt_ref = (int16_t)d;           /* follow the valley */
-        /* not armed: gate on the actuation point; armed: gate on the RT re-press delta */
-        int trip = k->rt_armed ? (d - k->rt_ref >= rtp) : (d >= act);
-        if (trip) {
-          k->pressed   = 1;
-          k->rt_armed  = 1;
-          k->rt_ref    = (int16_t)d;
+
+      /* ---- HALL_RT_TRADITIONAL (classic / Wooting-style Rapid Trigger) ----
+       * The active trigger zone is ONLY the band below the actuation point.
+       *  - A press actuates once travel reaches `act` (and then "arms" RT).
+       *  - While the key rises but stays below `act`, a downward reversal of
+       *    at least `rtp` re-triggers it; an upward reversal of at least `rtl`
+       *    releases it.
+       *  - Rising back ABOVE the actuation point (`d < act`) resets the key and
+       *    DISARMS RT, so the next trigger must cross the actuation point again.
+       * `release_cmm` is a hard release gate at the bottom of the band. */
+      if (c->rt_mode == HALL_RT_TRADITIONAL) {
+        if (d < act) k->rt_armed = 0;          /* above actuation -> reset+disarm */
+        if (!k->pressed) {
+          if (d <= k->rt_ref) k->rt_ref = (int16_t)d;   /* follow the valley */
+          int trip = k->rt_armed ? (d - k->rt_ref >= rtp) : (d >= act);
+          if (trip) { k->pressed = 1; k->rt_armed = 1; k->rt_ref = (int16_t)d; }
+        } else {
+          if (d >= k->rt_ref) k->rt_ref = (int16_t)d;   /* follow the peak */
+          if (k->rt_ref - d >= rtl) { k->pressed = 0; k->rt_ref = (int16_t)d; }
+        }
+        if (d <= rel) {                        /* dropped to the release floor */
+          k->pressed = 0;
+          k->rt_armed = 0;
+          k->rt_ref = (int16_t)d;
         }
       } else {
-        if (d >= k->rt_ref) k->rt_ref = (int16_t)d;           /* follow the peak   */
-        if (k->rt_ref - d >= rtl) {                           /* rapid-trigger release */
-          k->pressed = 0;
-          k->rt_ref  = (int16_t)d;
+        /* ---- HALL_RT_CONTINUOUS (stock CRT) ----
+         * After the first actuation the whole travel stays "ready" until full
+         * release: the key re-triggers anywhere (even above the actuation point)
+         * on a downward move of `rt`. This is the stock FUN60 Pro behaviour, so
+         * the vendor app's RT control keeps working. */
+        if (!k->pressed) {
+          if (d <= k->rt_ref) k->rt_ref = (int16_t)d;   /* follow the valley */
+          int trip = k->rt_armed ? (d - k->rt_ref >= rtp) : (d >= act);
+          if (trip) { k->pressed = 1; k->rt_armed = 1; k->rt_ref = (int16_t)d; }
+        } else {
+          if (d >= k->rt_ref) k->rt_ref = (int16_t)d;   /* follow the peak */
+          if (k->rt_ref - d >= rtl) { k->pressed = 0; k->rt_ref = (int16_t)d; }
         }
-      }
-      if (d <= rel) {                          /* released past the release point  */
-        k->pressed  = 0;
-        k->rt_armed = 0;
-        k->rt_ref   = (int16_t)d;
+        if (d <= rel) {                        /* released past the release point */
+          k->pressed = 0;
+          k->rt_armed = 0;
+          k->rt_ref = (int16_t)d;
+        }
       }
     } else {
       /* Normal + (DKS/ModTap/Toggle/SnapTap fall back to) fixed threshold. */

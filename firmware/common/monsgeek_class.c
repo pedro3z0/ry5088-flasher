@@ -45,11 +45,14 @@ static usb_sts_type class_init_handler(void *udev)
   usbd_core_type *pudev = (usbd_core_type *)udev;
   monsgeek_class_t *p = (monsgeek_class_t *)pudev->class_handler->pdata;
 
-  /* IF0 boot keyboard: interrupt IN, 8 byte */
-  usbd_ept_open(pudev, MG_EP_BOOT_KBD_IN, EPT_INT_TYPE, 8);
+  /* IF0 boot keyboard: interrupt IN, 64 byte (descriptor says 64, like stock) */
+  usbd_ept_open(pudev, MG_EP_BOOT_KBD_IN, EPT_INT_TYPE, MONSGEEK_REPORT_SIZE);
   /* IF1 extended: interrupt IN, 64 byte */
   usbd_ept_open(pudev, MG_EP_EXT_IN, EPT_INT_TYPE, MONSGEEK_REPORT_SIZE);
-  /* IF2 vendor: feature reports over EP0, no dedicated endpoint */
+  /* IF2 vendor: declared in the config descriptor (HID needs an EP). The config
+   * protocol itself still uses 64-byte FEATURE reports over EP0; this EP exists
+   * so IF2 is a spec-valid HID interface and the host's HID driver binds it. */
+  usbd_ept_open(pudev, MG_EP_VENDOR_IN, EPT_INT_TYPE, MONSGEEK_REPORT_SIZE);
 
   p->hid_state = 0;
   monsgeek_state_init(&p->state);
@@ -61,6 +64,7 @@ static usb_sts_type class_clear_handler(void *udev)
   usbd_core_type *pudev = (usbd_core_type *)udev;
   usbd_ept_close(pudev, MG_EP_BOOT_KBD_IN);
   usbd_ept_close(pudev, MG_EP_EXT_IN);
+  usbd_ept_close(pudev, MG_EP_VENDOR_IN);
   return USB_OK;
 }
 

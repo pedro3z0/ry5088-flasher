@@ -1,0 +1,132 @@
+# MonsGeek/Akko FUN60 Pro (wired, Hall-effect) — RY5088 board profile.
+#
+# Derived from the live device + its stock firmware (see RE notes at the bottom):
+#     ry-flash --detect --json  -> dev_id 2304, "FUN60 PRO", v309
+#     lsusb -v -d 3151:502d     -> PID 0x502D, bcdDevice 3.09, 3 HID interfaces
+#     ry-flash --fetch 2304     -> fw_at32.bin (124668 B, sha256 237bbe74…a6ac)
+#
+# Stock identity is the AKKO package
+# "AKKO FUN60PRO_RY5088_ID_2304_C 8K单模霍尔 V308版本升级工具":
+#   单模 = single-mode (WIRED ONLY, no PAN1080 radio), 霍尔 = Hall-effect.
+# Internal name "ry5088_akko_fun60pro_1m_8k" (1m = 1 mode).
+#
+# Fields left out fall back to the platform defaults in gen/gen_profile.py.
+
+[meta]
+dev_id       = 2304            # GET_INFOR id (decimal) — the safe discriminator.
+display_name = "Fun60 Pro"
+name         = "ry5088_akko_fun60pro_1m_8k"   # vendor internal model name
+switch_type  = "HE"            # Hall-effect (NOT TMR)
+wireless     = false           # 单模: wired-only board, PAN1080 footprint unpopulated
+
+[usb]
+# Measured live (lsusb -v -d 3151:502d + `ry-flash --probe`).
+vid              = 0x3151
+pid              = 0x502D      # NOT 0x5030 — this model's normal-mode PID is 0x502D
+# bcdDevice is deliberately DIFFERENT from stock (3.09) so this build is
+# identifiable on the bus: `lsusb` shows `bcdDevice 4.00` while running our
+# firmware and `3.09` on stock. Everything else about the identity matches.
+bcd_device       = 0x0400      # custom build marker (stock = 0x0309)
+# NOTE: the stock FUN60 Pro leaves iManufacturer blank and puts the family name in
+# iProduct (measured). Mirror it exactly so the vendor app recognises the board.
+manufacturer_str = "      "    # 6 spaces (stock iManufacturer is blank)
+product_str      = "MonsGeek Keyboard"
+config_str       = "Keyboard Config"
+interface_str    = "Keyboard Interface"
+
+[version]
+# GET_INFOR reports report[7]=HI, report[8]=LO -> host prints "v" LO HI02.
+# Stock is v309. We deliberately report a HIGHER, distinct version so the
+# custom firmware is unmistakable: `ry-flash --detect` shows v400 (stock v309),
+# and the vendor app sees a version newer than the cloud build so it will not
+# try to "update" it.
+hi = 0x00
+lo = 0x04
+
+[matrix]
+# Same analog front-end as the RY5088 reference: CD4017-style column counter +
+# 3-bit row mux on a single ADC channel (ADC1 ch2 / PA2).
+cols  = 14                    # column-counter positions
+rows  = 6                     # mux rows; key = col*rows + row
+# rows 1..5 carry the 5 physical 60% rows (row 0 is unused: the reference map
+# leaves row 0 empty in every column).
+#
+# Pins below are the RE'd reference-design wiring (documentation only — the
+# generator does NOT emit them; they are compiled into common/keyscan.c).
+reset_pin  = "PA4"
+clock_pin  = "PA5"
+strobe_pin = "PA6"
+row_addr_pins = ["PC6", "PC7", "PC8"]
+enable_pin = "PF7"
+adc_pin     = "PA2"
+adc_channel = 2
+settle_col  = 200
+settle_mux  = 40
+
+[hall]
+# Magnetic travel model. press_decreases = true -> pressing LOWERS the ADC reading.
+press_decreases  = true
+full_travel_cmm  = 400        # 4.00 mm nominal full travel
+assumed_span     = 1600       # ADC counts over full travel
+noise_counts     = 16
+press_cmm        = 200        # 2.00 mm default actuation
+release_cmm      = 150        # 1.50 mm default release (Normal mode hysteresis)
+rt_press_cmm     = 50         # 0.50 mm RT re-press delta
+rt_release_cmm   = 50         # 0.50 mm RT release delta
+# Rapid Trigger flavour (see docs/firmware.md §4.1 and the RE notes below):
+#   "traditional" = classic RT. The trigger zone is ONLY between the actuation
+#                   point and the bottom. Rising above the actuation point resets
+#                   the key, which must then re-cross the actuation point.
+#   "continuous"  = the trigger zone spans the whole travel until FULL release;
+#                   the key can re-trigger even above the actuation point.
+# Stock FUN60 Pro ships "continuous" (CRT); we build "traditional" on request.
+rt_mode = "traditional"
+
+[leds]
+count   = 61                  # per-key WS2812 count (61-key 60% ANSI)
+max_col = 14
+max_row = 5
+# Serpentine chain map (chain index -> physical col,row). Row counts are
+# 14 / 14 / 13 / 12 / 8 = 61, i.e. a standard 60% ANSI layout.
+phys_col = [
+   0, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,14,13,12,11,10, 9, 8, 7, 6, 5, 4, 3,
+   2, 0, 0, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,14,14,11,10, 9, 8, 7, 6, 5, 4, 3, 2,
+   0, 0, 1, 2, 6,10,11,13,14,
+]
+phys_row = [
+   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+   2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+   4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5,
+]
+
+[rgb]
+# Reference-design wiring / timing (documentation; compiled into common/rgb.c).
+bit0     = 0xC0
+bit1     = 0xF0
+data_pin = "PA10"
+order    = "GRB"
+
+[keymap]
+# HID usage IDs, indexed by key = col*KS_ROWS + row (84 entries; row 0 unused).
+# These are the REAL stock values for dev 2304, read from the MonsGeek/Akko
+# device database (monsgeek-akko-linux/data/device_matrices.json,
+# "12625:20525:2304".matrix, decoded with that entry's keyNames). Verified against
+# the working 2307 reference for the shared left-hand columns.
+#   0xE0 LCtrl 0xE1 LShift 0xE2 LAlt 0xE3 LGui 0xE4 RCtrl 0xE5 RShift
+#   0xE6 RAlt  0x65 Application (Menu)
+codes = [
+  0x00, 0x29, 0x2B, 0x39, 0xE1, 0xE0,   # col 0:  -- Esc Tab Caps LShift LCtrl
+  0x00, 0x1E, 0x14, 0x04, 0x00, 0x00,   # col 1:  -- 1 q a
+  0x00, 0x1F, 0x1A, 0x16, 0x1D, 0xE3,   # col 2:  -- 2 w s z LGui
+  0x00, 0x20, 0x08, 0x07, 0x1B, 0xE2,   # col 3:  -- 3 e d x LAlt
+  0x00, 0x21, 0x15, 0x09, 0x06, 0x00,   # col 4:  -- 4 r f c
+  0x00, 0x22, 0x17, 0x0A, 0x19, 0x00,   # col 5:  -- 5 t g v
+  0x00, 0x23, 0x1C, 0x0B, 0x05, 0x2C,   # col 6:  -- 6 y h b Space
+  0x00, 0x24, 0x18, 0x0D, 0x11, 0x00,   # col 7:  -- 7 u j n
+  0x00, 0x25, 0x0C, 0x0E, 0x10, 0x00,   # col 8:  -- 8 i k m
+  0x00, 0x26, 0x12, 0x0F, 0x36, 0x00,   # col 9:  -- 9 o l ,
+  0x00, 0x27, 0x13, 0x33, 0x37, 0xE6,   # col10:  -- 0 p ; . RAlt
+  0x00, 0x2D, 0x2F, 0x34, 0x38, 0x00,   # col11:  -- - [ ' /
+  0x00, 0x2E, 0x30, 0x00, 0xE5, 0x65,   # col12:  -- = ] -- RShift Menu
+  0x00, 0x2A, 0x31, 0x28, 0x00, 0xE4,   # col13:  -- Bksp \ Enter -- RCtrl
+]

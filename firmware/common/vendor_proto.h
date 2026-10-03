@@ -54,6 +54,7 @@ enum {
   FEA_SET_MAG_CAL      = 0x1C,
   FEA_SET_KEY_MAG_MODE = 0x1D,
   FEA_SET_MAG_MAXCAL   = 0x1E,
+  FEA_SET_RTMODE       = 0x1F,   /* RT flavour: 0 = traditional, 1 = continuous  */
   FEA_SET_MULTI_MAG    = 0x65,
   FEA_ENTER_BOOTLOADER = 0x7F,
   FEA_GET_REV          = 0x80,
@@ -73,6 +74,7 @@ enum {
   FEA_GET_SLEEPTIME    = 0x91,
   FEA_GET_MAG_CAL      = 0x9C,
   FEA_GET_KEY_MAG_MODE = 0x9D,
+  FEA_GET_RTMODE       = 0x9F,   /* RT flavour read-back (EXTENSION, see .c)     */
   FEA_GET_MULTI_MAG    = 0xE5,
   FEA_GET_FEATURE_LIST = 0xE6
 };

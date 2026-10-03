@@ -7,6 +7,10 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 pub const VID: u16 = 0x3151;
+/// Normal-mode PIDs vary per model (the device-map catalog lists 0x5025..0x5033
+/// and others); 0x5030 is only the most common. dev_id (GET_INFOR) remains the
+/// only safe discriminator — this list is just transport matching.
+pub const PID_NORMALS: &[u16] = &[0x5025, 0x5029, 0x502D, 0x502E, 0x502F, 0x5030, 0x5033];
 pub const PID_NORMAL: u16 = 0x5030;
 pub const PID_BOOT: u16 = 0x502A;
 const UP_NORMAL: u16 = 0xFFFF;
@@ -43,6 +47,15 @@ impl Dev {
         let _ = self.api.refresh_devices();
     }
 
+    fn open_any_normal(&self, usage: Option<u16>) -> Option<HidDevice> {
+        for pid in PID_NORMALS {
+            if let Some(d) = self.open(*pid, UP_NORMAL, usage) {
+                return Some(d);
+            }
+        }
+        None
+    }
+
     fn open(&self, pid: u16, up: u16, usage: Option<u16>) -> Option<HidDevice> {
         for info in self.api.device_list() {
             if info.vendor_id() == VID
@@ -62,12 +75,20 @@ impl Dev {
         self.api.device_list().any(|i| i.vendor_id() == VID && i.product_id() == pid && i.usage_page() == up)
     }
 
-    pub fn normal_present(&self) -> bool { self.present(PID_NORMAL, UP_NORMAL) }
+    fn normal_present_any(&self) -> bool {
+        self.api.device_list().any(|i| {
+            i.vendor_id() == VID
+                && PID_NORMALS.contains(&i.product_id())
+                && i.usage_page() == UP_NORMAL
+        })
+    }
+
+    pub fn normal_present(&self) -> bool { self.normal_present_any() }
     pub fn boot_present(&self) -> bool { self.present(PID_BOOT, UP_BOOT) }
 
     /// Read GET_INFOR from the connected keyboard (normal mode). Returns (dev_id, version).
     pub fn read_infor(&self) -> Option<(u16, String)> {
-        let d = self.open(PID_NORMAL, UP_NORMAL, Some(2))?;
+        let d = self.open_any_normal(Some(2))?;
         send(&d, &proto::get_infor()).ok()?;
         sleep(ms(50));
         let r = recv(&d)?;
@@ -77,7 +98,7 @@ impl Dev {
 
     /// Open the normal-mode device and read its USB manufacturer / product / serial strings.
     pub fn usb_strings(&self) -> (Option<String>, Option<String>, Option<String>) {
-        match self.open(PID_NORMAL, UP_NORMAL, Some(2)) {
+        match self.open_any_normal(Some(2)) {
             Some(d) => (
                 d.get_manufacturer_string().ok().flatten(),
                 d.get_product_string().ok().flatten(),
@@ -89,7 +110,7 @@ impl Dev {
 
     /// Send the enter-bootloader sequence (WIPES config) and wait up to ~20s for re-enumeration to 502A.
     pub fn enter_bootloader(&mut self) -> Result<(), String> {
-        let d = self.open(PID_NORMAL, UP_NORMAL, Some(2)).ok_or("not in normal mode (3151:5030)")?;
+        let d = self.open_any_normal(Some(2)).ok_or("not in normal mode (3151:5025..5033)")?;
         send(&d, &proto::isp_prepare()).map_err(|e| format!("enter-bootloader (ISP_PREPARE) failed: {e}"))?;
         sleep(ms(100));
         // This command resets the device, so its transfer may report an error as the port drops — that is
